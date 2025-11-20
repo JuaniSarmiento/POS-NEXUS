@@ -1,0 +1,205 @@
+version: '3.8'
+
+services:
+  # ==================== PostgreSQL Database ====================
+  db:
+    image: postgres:17-alpine
+    container_name: nexus_pos_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nexuspos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexuspos_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-nexus_pos}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexuspos -d nexus_pos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nexus_network
+
+  # ==================== FastAPI Backend ====================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nexus_pos_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Database
+      POSTGRES_SERVER: db
+      POSTGRES_USER: ${POSTGRES_USER:-nexuspos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexuspos_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-nexus_pos}
+      POSTGRES_PORT: 5432
+      
+      # Security
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
+      
+      # CORS
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      
+      # Mercado Pago
+      MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN}
+      MERCADOPAGO_WEBHOOK_SECRET: ${MERCADOPAGO_WEBHOOK_SECRET}
+      
+      # AFIP (Facturación Electrónica)
+      AFIP_CERT: ${AFIP_CERT}
+      AFIP_KEY: ${AFIP_KEY}
+      AFIP_CUIT: ${AFIP_CUIT}
+      AFIP_PRODUCTION: ${AFIP_PRODUCTION:-False}
+      
+      # Monitoring (Sentry)
+      SENTRY_DSN: ${SENTRY_DSN}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+    volumes:
+      - ./app:/app/app
+      - ./logs:/app/logs
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - nexus_network
+    labels:
+      # Traefik labels (si se usa Traefik como reverse proxy)
+      - "traefik.enable=true"
+      - "traefik.http.routers.nexus-backend.rule=Host(`api.nexuspos.com`)"
+      - "traefik.http.routers.nexus-backend.entrypoints=websecure"
+      - "traefik.http.routers.nexus-backend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.nexus-backend.loadbalancer.server.port=8000"
+
+  # ==================== Adminer (DB Management) ====================
+  adminer:
+    image: adminer:latest
+    container_name: nexus_pos_adminer
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+      ADMINER_DESIGN: nette
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+    networks:
+      - nexus_network
+
+  # ==================== Redis (Opcional - Para Celery/Cache) ====================
+  redis:
+    image: redis:7-alpine
+    container_name: nexus_pos_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - nexus_network
+    profiles:
+      - celery  # Solo se levanta si se activa el profile: docker-compose --profile celery up
+
+  # ==================== Celery Worker (Opcional) ====================
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nexus_pos_celery_worker
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+    environment:
+      # Mismas variables que backend
+      POSTGRES_SERVER: db
+      POSTGRES_USER: ${POSTGRES_USER:-nexuspos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexuspos_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-nexus_pos}
+      POSTGRES_PORT: 5432
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./app:/app/app
+    command: uv run celery -A app.celery_app worker --loglevel=info
+    networks:
+      - nexus_network
+    profiles:
+      - celery
+
+  # ==================== Celery Beat (Scheduler - Opcional) ====================
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nexus_pos_celery_beat
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+    environment:
+      POSTGRES_SERVER: db
+      POSTGRES_USER: ${POSTGRES_USER:-nexuspos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexuspos_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-nexus_pos}
+      POSTGRES_PORT: 5432
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./app:/app/app
+    command: uv run celery -A app.celery_app beat --loglevel=info
+    networks:
+      - nexus_network
+    profiles:
+      - celery
+
+  # ==================== Flower (Celery Monitoring - Opcional) ====================
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nexus_pos_flower
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    ports:
+      - "${FLOWER_PORT:-5555}:5555"
+    command: uv run celery -A app.celery_app flower --port=5555
+    networks:
+      - nexus_network
+    profiles:
+      - celery
+
+# ==================== Volumes ====================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# ==================== Networks ====================
+networks:
+  nexus_network:
+    driver: bridge

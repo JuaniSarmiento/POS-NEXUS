@@ -1,0 +1,6 @@
+SKU,Nombre,Tipo,Precio Venta,Precio Costo,Stock Actual,Margen %,Estado
+COCA-500,Coca Cola 500ml,general,$150.00,$80.00,100.0,46.7%,Activo
+PAN-INT-001,Pan Integral,general,$200.00,$120.00,50.0,40.0%,Activo
+LECHE-1L,Leche Entera 1L,general,$180.00,$100.00,75.0,44.4%,Activo
+ARROZ-BL-1K,Arroz Blanco,general,$120.00,$70.00,30.0,41.7%,Activo
+ACEITE-900,Aceite Girasol,general,$250.00,$150.00,25.0,40.0%,Activo

@@ -1,0 +1,50 @@
+# Nexus POS - Requirements
+# Python 3.11+
+
+# FastAPI Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+python-multipart==0.0.6
+
+# Database
+sqlmodel==0.0.14
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# Security & Auth
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+bcrypt==4.1.2
+
+# Utilities
+python-dotenv==1.0.0
+email-validator==2.1.0
+
+# Payment Integration
+mercadopago==2.2.1
+
+# AFIP Integration (Opcional - descomentar cuando se implemente)
+# pyafipws==2.9.0
+
+# PDF Generation
+reportlab==4.0.9
+weasyprint==60.2
+
+# Email
+aiosmtplib==3.0.1
+jinja2==3.1.3
+
+# Monitoring & Logging
+python-json-logger==2.0.7
+
+# Rate Limiting (Production: usar Redis)
+slowapi==0.1.9
+
+# Testing (ya existentes)
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+httpx==0.26.0
