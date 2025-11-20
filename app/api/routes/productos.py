@@ -58,7 +58,7 @@ async def crear_producto(
     result = await session.execute(statement)
     existing_producto = result.scalar_one_or_none()
     
-    if existing_producto:
+    if existing_producto is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Ya existe un producto con SKU '{producto_data.sku}' en esta tienda"
@@ -145,7 +145,10 @@ async def buscar_productos_avanzado(
     
     # Contar total para paginación
     count_stmt = select(func.count(Producto.id)).where(and_(*conditions))
-    total = (await session.execute(count_stmt)).scalar()
+    count_result = await session.execute(count_stmt)
+    total = count_result.scalar()
+    if total is None:
+        total = 0
     
     # Procesar productos con stock calculado
     productos_response = []
@@ -283,10 +286,10 @@ async def actualizar_producto(
             Producto.tienda_id == current_tienda.id,
             Producto.sku == producto_update.sku
         )
-        result = await session.execute(statement)
-        existing_producto = result.scalar_one_or_none()
+        sku_check_result = await session.execute(statement)
+        existing_producto = sku_check_result.scalar_one_or_none()
         
-        if existing_producto:
+        if existing_producto is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Ya existe un producto con SKU '{producto_update.sku}' en esta tienda"

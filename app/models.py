@@ -29,7 +29,8 @@ class Tienda(SQLModel, table=True):
         index=True
     )
     rubro: str = Field(
-        max_length=100,
+        default="general",
+        max_length=50,
         nullable=False,
         description="Categoría del negocio: ropa, carniceria, ferreteria, etc."
     )
